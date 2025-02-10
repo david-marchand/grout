@@ -41,6 +41,15 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # force fetch all history
           ref: ${{ github.event.pull_request.head.sha || github.ref }}
+      - name: generate cache key
+        id: gen_cache_key
+        run: echo "cache_key=${{ github.job }}-${{ hashFiles('subprojects/*.wrap') }}" >> $GITHUB_OUTPUT
+      - name: restore cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: build/subprojects/
+          key: ${{ steps.gen_cache_key.outputs.cache_key }}
       - run: git config --global --add safe.directory $PWD
       - run: git rebase -x "git --no-pager log --oneline -1 && make all unit-tests && sudo smoke/run.sh build" "HEAD~${{ github.event.pull_request.commits }}"
         if: ${{ github.event.pull_request.commits }}
@@ -69,6 +78,15 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # force fetch all history
           ref: ${{ github.event.pull_request.head.sha || github.ref }}
+      - name: generate cache key
+        id: gen_cache_key
+        run: echo "cache_key=${{ github.job }}-${{ hashFiles('subprojects/*.wrap') }}" >> $GITHUB_OUTPUT
+      - name: restore cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: build/subprojects/
+          key: ${{ steps.gen_cache_key.outputs.cache_key }}
       - run: git config --global --add safe.directory $PWD
       - run: git rebase -x "git --no-pager log --oneline -1 && make" "HEAD~${{ github.event.pull_request.commits }}"
         if: ${{ github.event.pull_request.commits }}
