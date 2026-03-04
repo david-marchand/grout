@@ -257,7 +257,7 @@ int worker_graph_reload(struct worker *worker, gr_vec struct iface_info_port **p
 
 	// wait for datapath worker to pickup the config update
 	atomic_store(&worker->next_config, next);
-	worker_signal_ready(worker);
+	worker_signal_reconfig(worker);
 	while (atomic_load(&worker->cur_config) != next)
 		usleep(500);
 

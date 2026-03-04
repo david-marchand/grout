@@ -218,7 +218,7 @@ void *gr_datapath_loop(void *priv) {
 	static_assert(atomic_is_lock_free(&w->shutdown));
 	static_assert(atomic_is_lock_free(&w->cur_config));
 	static_assert(atomic_is_lock_free(&w->stats_reset));
-	worker_signal_ready(w);
+	worker_signal_started(w);
 
 reconfig:
 	if (atomic_load(&w->shutdown))
@@ -233,7 +233,7 @@ reconfig:
 	atomic_store(&w->cur_config, cur);
 
 	if (graph == NULL) {
-		worker_wait_ready(w);
+		worker_wait_reconfig(w);
 		if (ctx.w_stats != NULL && atomic_exchange(&w->stats_reset, false))
 			stats_reset(ctx.w_stats);
 		goto reconfig;
