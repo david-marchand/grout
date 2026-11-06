@@ -79,6 +79,8 @@ void iface_cp_tx(void *obj, uintptr_t, const struct control_queue_drain *drain) 
 
 	capture_enqueue(d->iface, GR_CAPTURE_DIR_OUT, m);
 
+	gr_cksum_resolve(m, 0);
+
 	if (rte_pktmbuf_linearize(m) == 0) {
 		data = rte_pktmbuf_mtod(m, char *);
 	} else {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2023 Robin Jarry
 
+#include "cksum.h"
 #include "config.h"
 #include "graph.h"
 #include "iface.h"
@@ -117,9 +118,22 @@ static inline uint16_t tx_add_vlan(
 	return ok;
 }
 
+static inline uint16_t tx_prepare(
+	struct rte_mbuf **mbufs,
+	uint16_t n,
+	uint16_t port_id,
+	uint16_t queue_id,
+	uint64_t tx_offloads
+) {
+	for (uint16_t i = 0; i < n; i++)
+		gr_cksum_resolve(mbufs[i], tx_offloads);
+	return rte_eth_tx_prepare(port_id, queue_id, mbufs, n);
+}
+
 uint16_t tx_process(struct rte_graph *graph, struct rte_node *node, void **objs, uint16_t nb_objs) {
 	const struct tx_node_ctx *ctx = tx_node_ctx(node);
 	struct rte_mbuf *mbufs[RTE_GRAPH_BURST_SIZE];
+	uint64_t tx_offloads;
 	uint16_t tx_ok;
 
 	if (unlikely(!tx_begin(graph, node, objs, nb_objs, 0)))
@@ -129,6 +143,9 @@ uint16_t tx_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 	if (unlikely(nb_objs == 0))
 		return 0;
 
+	tx_offloads = iface_info_port(mbuf_data(objs[0])->iface)->tx_offloads;
+
+	nb_objs = tx_prepare(mbufs, nb_objs, ctx->txq.port_id, ctx->txq.queue_id, tx_offloads);
 	tx_ok = rte_eth_tx_burst(ctx->txq.port_id, ctx->txq.queue_id, mbufs, nb_objs);
 
 	tx_finish(graph, node, (void **)mbufs, nb_objs, tx_ok, 0);
@@ -140,6 +157,7 @@ uint16_t
 tx_shared_process(struct rte_graph *graph, struct rte_node *node, void **objs, uint16_t nb_objs) {
 	const struct tx_node_ctx *ctx = tx_node_ctx(node);
 	struct rte_mbuf *mbufs[RTE_GRAPH_BURST_SIZE];
+	uint64_t tx_offloads;
 	uint16_t tx_ok;
 
 	if (unlikely(!tx_begin(graph, node, objs, nb_objs, RXTX_F_TXQ_SHARED)))
@@ -149,6 +167,9 @@ tx_shared_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 	if (unlikely(nb_objs == 0))
 		return 0;
 
+	tx_offloads = iface_info_port(mbuf_data(objs[0])->iface)->tx_offloads;
+
+	nb_objs = tx_prepare(mbufs, nb_objs, ctx->txq.port_id, ctx->txq.queue_id, tx_offloads);
 	rte_spinlock_lock(ctx->lock);
 	tx_ok = rte_eth_tx_burst(ctx->txq.port_id, ctx->txq.queue_id, mbufs, nb_objs);
 	rte_spinlock_unlock(ctx->lock);
