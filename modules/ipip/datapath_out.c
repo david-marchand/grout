@@ -9,6 +9,7 @@
 #include "l3.h"
 #include "mbuf.h"
 #include "rxtx.h"
+#include "sw_gso.h"
 
 #include <gr_ipip.h>
 
@@ -20,6 +21,7 @@ enum {
 	IP_OUTPUT = 0,
 	NO_TUNNEL,
 	NO_HEADROOM,
+	SW_GSO,
 	IFACE_DOWN,
 	EDGE_COUNT,
 };
@@ -36,6 +38,11 @@ ipip_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 	rte_edge_t edge;
 
 	IFACE_STATS_VARS(tx, self);
+
+	if (batch_has_tso(objs, nb_objs)) {
+		rte_node_enqueue(graph, node, SW_GSO, objs, nb_objs);
+		return nb_objs;
+	}
 
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
@@ -103,6 +110,7 @@ static struct rte_node_register ipip_output_node = {
 		[IP_OUTPUT] = "ip_output",
 		[NO_TUNNEL] = "ipip_output_no_tunnel",
 		[NO_HEADROOM] = "error_no_headroom",
+		[SW_GSO] = "sw_gso_ipip",
 		[IFACE_DOWN] = "iface_input_admin_down",
 	},
 };
@@ -117,3 +125,20 @@ static struct gr_node_info ipip_output_info = {
 GR_NODE_REGISTER(ipip_output_info);
 
 GR_DROP_REGISTER(ipip_output_no_tunnel);
+
+static struct rte_node_register sw_gso_ipip_node = {
+	.name = "sw_gso_ipip",
+	.process = sw_gso_tunnel_process,
+	.nb_edges = 2,
+	.next_nodes = {
+		[0] = "ipip_output",
+		[1] = "sw_gso_error",
+	},
+};
+
+static struct gr_node_info sw_gso_ipip_info = {
+	.node = &sw_gso_ipip_node,
+	.type = GR_NODE_T_L3,
+};
+
+GR_NODE_REGISTER(sw_gso_ipip_info);

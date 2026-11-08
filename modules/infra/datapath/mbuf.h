@@ -120,3 +120,11 @@ static inline void *__gr_mbuf_prepend(struct rte_mbuf *m, uint16_t len) {
 
 #undef rte_pktmbuf_prepend
 #define rte_pktmbuf_prepend GR_SYMBOL_FORBIDDEN(rte_pktmbuf_prepend, gr_mbuf_prepend)
+
+static inline bool batch_has_tso(void **objs, uint16_t nb_objs) {
+	for (uint16_t i = 0; i < nb_objs; i++) {
+		if (((struct rte_mbuf *)objs[i])->tso_segsz)
+			return true;
+	}
+	return false;
+}

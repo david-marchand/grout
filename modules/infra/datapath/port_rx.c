@@ -172,6 +172,35 @@ static inline void soft_rss(struct rte_mbuf *m) {
 		gr_mbuf_flow_hash_set(m, gr_mbuf_flow_hash_compute(m, GR_MBUF_FLOW_HASH_L3_L4));
 }
 
+static inline void virtio_rx_validate_tso(struct rte_mbuf *m) {
+	struct rte_ether_hdr *eth;
+	struct rte_ipv4_hdr *ip4;
+	uint16_t ether_type;
+
+	if (!m->tso_segsz)
+		return;
+
+	eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+	if (eth->ether_type == RTE_BE16(RTE_ETHER_TYPE_VLAN)) {
+		struct rte_vlan_hdr *vlan = (struct rte_vlan_hdr *)(eth + 1);
+
+		ether_type = vlan->eth_proto;
+		ip4 = (struct rte_ipv4_hdr *)(vlan + 1);
+	} else {
+		ether_type = eth->ether_type;
+		ip4 = (struct rte_ipv4_hdr *)(eth + 1);
+	}
+
+	if (ether_type == RTE_BE16(RTE_ETHER_TYPE_IPV4) && ip4->next_proto_id == IPPROTO_TCP)
+		return;
+
+	if (ether_type == RTE_BE16(RTE_ETHER_TYPE_IPV6)
+	    && ((struct rte_ipv6_hdr *)ip4)->proto == IPPROTO_TCP)
+		return;
+
+	m->tso_segsz = 0;
+}
+
 uint16_t rx_virtio_process(struct rte_graph *graph, struct rte_node *node, void **, uint16_t) {
 	struct rte_mbuf **mbufs = (struct rte_mbuf **)node->objs;
 	const struct rx_node_ctx *ctx = rx_node_ctx(node);
@@ -199,6 +228,7 @@ uint16_t rx_virtio_process(struct rte_graph *graph, struct rte_node *node, void 
 			d->vlan_id = 0;
 		}
 
+		virtio_rx_validate_tso(m);
 		soft_rss(m);
 	}
 
@@ -368,6 +398,7 @@ uint16_t rx_bond_virtio_process(struct rte_graph *graph, struct rte_node *node, 
 				d->iface = iface;
 		}
 
+		virtio_rx_validate_tso(m);
 		soft_rss(m);
 	}
 

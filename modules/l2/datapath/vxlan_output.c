@@ -10,6 +10,7 @@
 #include "l3.h"
 #include "mbuf.h"
 #include "rxtx.h"
+#include "sw_gso.h"
 
 #include <rte_byteorder.h>
 #include <rte_ip6.h>
@@ -22,6 +23,7 @@ enum {
 	NO_ROUTE,
 	NO_HEADROOM,
 	NO_AF,
+	SW_GSO,
 	EDGE_COUNT,
 };
 
@@ -48,6 +50,11 @@ static uint16_t vxlan_output_process(
 	struct rte_mbuf *m;
 	rte_edge_t edge;
 	uint16_t len;
+
+	if (batch_has_tso(objs, nb_objs)) {
+		rte_node_enqueue(graph, node, SW_GSO, objs, nb_objs);
+		return nb_objs;
+	}
 
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		m = objs[i];
@@ -171,6 +178,7 @@ static struct rte_node_register vxlan_output_node = {
 		[NO_ROUTE] = "vxlan_output_no_route",
 		[NO_HEADROOM] = "error_no_headroom",
 		[NO_AF] = "vxlan_output_no_af",
+		[SW_GSO] = "sw_gso_vxlan",
 	},
 };
 
@@ -185,3 +193,20 @@ GR_NODE_REGISTER(vxlan_output_info);
 
 GR_DROP_REGISTER(vxlan_output_no_route);
 GR_DROP_REGISTER(vxlan_output_no_af);
+
+static struct rte_node_register sw_gso_vxlan_node = {
+	.name = "sw_gso_vxlan",
+	.process = sw_gso_vxlan_process,
+	.nb_edges = 2,
+	.next_nodes = {
+		[0] = "vxlan_output",
+		[1] = "sw_gso_error",
+	},
+};
+
+static struct gr_node_info sw_gso_vxlan_info = {
+	.node = &sw_gso_vxlan_node,
+	.type = GR_NODE_T_L3,
+};
+
+GR_NODE_REGISTER(sw_gso_vxlan_info);

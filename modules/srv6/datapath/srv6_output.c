@@ -7,7 +7,9 @@
 #include "ip6_datapath.h"
 #include "l3.h"
 #include "nexthop.h"
+#include "rxtx.h"
 #include "srv6.h"
+#include "sw_gso.h"
 
 #include <gr_srv6.h>
 
@@ -20,6 +22,7 @@ enum {
 	INVALID,
 	NO_ROUTE,
 	NO_HEADROOM,
+	SW_GSO,
 	EDGE_COUNT,
 };
 
@@ -55,6 +58,11 @@ srv6_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 	uint32_t optlen, plen;
 	struct rte_mbuf *m;
 	rte_edge_t edge;
+
+	if (batch_has_tso(objs, nb_objs)) {
+		rte_node_enqueue(graph, node, SW_GSO, objs, nb_objs);
+		return nb_objs;
+	}
 
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		m = objs[i];
@@ -165,6 +173,7 @@ static struct rte_node_register srv6_output_node = {
 		[INVALID] = "sr6_pkt_invalid",
 		[NO_ROUTE] = "sr6_source_no_route",
 		[NO_HEADROOM] = "error_no_headroom",
+		[SW_GSO] = "sw_gso_sr6",
 	},
 };
 
@@ -179,3 +188,20 @@ GR_NODE_REGISTER(srv6_output_info);
 
 GR_DROP_REGISTER(sr6_pkt_invalid);
 GR_DROP_REGISTER(sr6_source_no_route);
+
+static struct rte_node_register sw_gso_sr6_node = {
+	.name = "sw_gso_sr6",
+	.process = sw_gso_tunnel_process,
+	.nb_edges = 2,
+	.next_nodes = {
+		[0] = "sr6_output",
+		[1] = "sw_gso_error",
+	},
+};
+
+static struct gr_node_info sw_gso_sr6_info = {
+	.node = &sw_gso_sr6_node,
+	.type = GR_NODE_T_L3,
+};
+
+GR_NODE_REGISTER(sw_gso_sr6_info);
