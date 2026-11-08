@@ -99,8 +99,14 @@ static uint16_t vxlan_output_process(
 			vh4->ip.hdr_checksum = rte_ipv4_cksum(&vh4->ip);
 			gr_cksum_reset(m);
 			gr_cksum_ip_set_good(m);
-			if (vxlan->flags & GR_VXLAN_F_UDP_CKSUM)
-				gr_cksum_l4_set_partial(m);
+			if (vxlan->flags & GR_VXLAN_F_UDP_CKSUM) {
+				if (vxlan_const_udp_cksum(
+					    &vh4->udp, rte_ipv4_phdr_cksum(&vh4->ip, 0)
+				    ))
+					gr_cksum_l4_set_good(m);
+				else
+					gr_cksum_l4_set_partial(m);
+			}
 
 			edge = IP_OUTPUT;
 			break;
@@ -126,8 +132,14 @@ static uint16_t vxlan_output_process(
 			vh6->ip.dst_addr = d->vtep.ipv6;
 			vh6->ip.payload_len = vh6->udp.dgram_len;
 			gr_cksum_reset(m);
-			if (vxlan->flags & GR_VXLAN_F_UDP_CKSUM)
-				gr_cksum_l4_set_partial(m);
+			if (vxlan->flags & GR_VXLAN_F_UDP_CKSUM) {
+				if (vxlan_const_udp_cksum(
+					    &vh6->udp, rte_ipv6_phdr_cksum(&vh6->ip, 0)
+				    ))
+					gr_cksum_l4_set_good(m);
+				else
+					gr_cksum_l4_set_partial(m);
+			}
 
 			edge = IP6_OUTPUT;
 			break;
