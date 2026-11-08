@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Robin Jarry
 
+#include "cksum.h"
 #include "graph.h"
 #include "ip4.h"
 #include "ip6.h"
@@ -94,6 +95,8 @@ static uint16_t vxlan_output_process(
 			vh4->ip.dst_addr = d->vtep.ipv4;
 			vh4->ip.total_length = rte_cpu_to_be_16(len + sizeof(*vh4));
 			vh4->ip.hdr_checksum = rte_ipv4_cksum(&vh4->ip);
+			gr_cksum_reset(m);
+			gr_cksum_ip_set_good(m);
 
 			edge = IP_OUTPUT;
 			break;

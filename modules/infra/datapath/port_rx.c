@@ -3,6 +3,7 @@
 
 #include "bond.h"
 #include "capture.h"
+#include "cksum.h"
 #include "config.h"
 #include "flow_hash.h"
 #include "graph.h"

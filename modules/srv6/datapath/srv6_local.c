@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2025 Olivier Gournet
 
+#include "cksum.h"
 #include "eth.h"
 #include "graph.h"
 #include "ip6_datapath.h"
@@ -295,7 +296,7 @@ static int process_behav_decap(
 	decap_outer(m, ip6_info);
 
 	// Reset to unknown so that it will checked in software.
-	m->ol_flags &= ~RTE_MBUF_F_RX_IP_CKSUM_MASK;
+	gr_cksum_reset(m);
 
 	if (!set_out_vrf_iface(m, sr_d))
 		return DEST_UNREACH;

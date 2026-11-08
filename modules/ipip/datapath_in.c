@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Robin Jarry
 
 #include "capture.h"
+#include "cksum.h"
 #include "eth.h"
 #include "graph.h"
 #include "ip4_datapath.h"
@@ -61,7 +62,7 @@ ipip_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 			goto next;
 		}
 		// Reset to unknown so that it will checked in software.
-		mbuf->ol_flags &= ~RTE_MBUF_F_RX_IP_CKSUM_MASK;
+		gr_cksum_reset(mbuf);
 		eth_data = eth_input_mbuf_data(mbuf);
 		eth_data->iface = ipip;
 		eth_data->domain = ETH_DOMAIN_LOCAL;
