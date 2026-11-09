@@ -61,6 +61,9 @@ static inline void sw_gso_update_segment(
 static inline uint16_t
 sw_gso_segment(struct rte_mbuf *m, uint16_t l2_len, struct rte_mbuf **segs, uint16_t max_segs) {
 	uint16_t seg_payload_len, payload_off;
+	uint16_t inner_ip_hdr_len;
+	uint16_t tunnel_hdr_len;
+	bool outer_l4_partial;
 	uint16_t tcp_hdr_len;
 	uint16_t payload_len;
 	uint16_t ip_hdr_len;
@@ -68,6 +71,7 @@ sw_gso_segment(struct rte_mbuf *m, uint16_t l2_len, struct rte_mbuf **segs, uint
 	uint16_t tso_segsz;
 	uint16_t hdr_len;
 	uint16_t n_segs;
+	bool tunnel = false;
 	uint16_t i;
 	void *dst;
 
@@ -78,21 +82,75 @@ sw_gso_segment(struct rte_mbuf *m, uint16_t l2_len, struct rte_mbuf **segs, uint
 	struct rte_ipv4_hdr *ip4 = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr *, l2_len);
 
 	if (IS_IPV4(ip4->version_ihl)) {
-		if (ip4->next_proto_id != IPPROTO_TCP)
-			return 0;
 		ip_hdr_len = rte_ipv4_hdr_len(ip4);
+		if (ip4->next_proto_id == IPPROTO_UDP) {
+			tunnel = gr_cksum_inner_l4_partial(m);
+			if (!tunnel)
+				return 0;
+		} else if (ip4->next_proto_id != IPPROTO_TCP) {
+			return 0;
+		}
 	} else {
 		struct rte_ipv6_hdr *ip6 = (struct rte_ipv6_hdr *)ip4;
-		if (ip6->proto != IPPROTO_TCP)
-			return 0;
 		ip_hdr_len = sizeof(*ip6);
+		if (ip6->proto == IPPROTO_UDP) {
+			tunnel = gr_cksum_inner_l4_partial(m);
+			if (!tunnel)
+				return 0;
+		} else if (ip6->proto != IPPROTO_TCP) {
+			return 0;
+		}
 	}
 
-	struct rte_tcp_hdr *tcp = rte_pktmbuf_mtod_offset(
-		m, struct rte_tcp_hdr *, l2_len + ip_hdr_len
-	);
-	tcp_hdr_len = (tcp->data_off >> 4) * 4;
-	hdr_len = l2_len + ip_hdr_len + tcp_hdr_len;
+	struct rte_tcp_hdr *tcp;
+
+	if (tunnel) {
+		struct rte_ether_hdr *inner_eth;
+		struct rte_ipv4_hdr *inner_ip4;
+		uint16_t inner_l2_len;
+
+		inner_eth = rte_pktmbuf_mtod_offset(
+			m,
+			struct rte_ether_hdr *,
+			l2_len + ip_hdr_len + sizeof(struct rte_udp_hdr)
+				+ sizeof(struct rte_vxlan_hdr)
+		);
+		if (inner_eth->ether_type == RTE_BE16(RTE_ETHER_TYPE_VLAN))
+			inner_l2_len = sizeof(*inner_eth) + sizeof(struct rte_vlan_hdr);
+		else
+			inner_l2_len = sizeof(*inner_eth);
+
+		tunnel_hdr_len = l2_len + ip_hdr_len + sizeof(struct rte_udp_hdr)
+			+ sizeof(struct rte_vxlan_hdr) + inner_l2_len;
+		inner_ip4 = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr *, tunnel_hdr_len);
+
+		if (IS_IPV4(inner_ip4->version_ihl)) {
+			if (inner_ip4->next_proto_id != IPPROTO_TCP)
+				return 0;
+			inner_ip_hdr_len = rte_ipv4_hdr_len(inner_ip4);
+		} else {
+			struct rte_ipv6_hdr *inner_ip6 = (struct rte_ipv6_hdr *)inner_ip4;
+			if (inner_ip6->proto != IPPROTO_TCP)
+				return 0;
+			inner_ip_hdr_len = sizeof(*inner_ip6);
+		}
+
+		tcp = rte_pktmbuf_mtod_offset(
+			m, struct rte_tcp_hdr *, tunnel_hdr_len + inner_ip_hdr_len
+		);
+		tcp_hdr_len = (tcp->data_off >> 4) * 4;
+		hdr_len = tunnel_hdr_len + inner_ip_hdr_len + tcp_hdr_len;
+		outer_l4_partial = gr_cksum_l4_partial(m);
+	} else {
+		tunnel_hdr_len = 0;
+		inner_ip_hdr_len = 0;
+		outer_l4_partial = false;
+
+		tcp = rte_pktmbuf_mtod_offset(m, struct rte_tcp_hdr *, l2_len + ip_hdr_len);
+		tcp_hdr_len = (tcp->data_off >> 4) * 4;
+		hdr_len = l2_len + ip_hdr_len + tcp_hdr_len;
+	}
+
 	payload_len = rte_pktmbuf_pkt_len(m) - hdr_len;
 
 	n_segs = (payload_len + tso_segsz - 1) / tso_segsz;
@@ -117,25 +175,55 @@ sw_gso_segment(struct rte_mbuf *m, uint16_t l2_len, struct rte_mbuf **segs, uint
 		       rte_pktmbuf_mtod_offset(m, const void *, hdr_len + payload_off),
 		       seg_payload_len);
 
-		sw_gso_update_segment(
-			seg,
-			l2_len,
-			ip_hdr_len,
-			tcp_hdr_len,
-			seg_payload_len,
-			i,
-			payload_off,
-			i == n_segs - 1
-		);
+		if (tunnel)
+			sw_gso_update_vxlan_segment(
+				seg,
+				l2_len,
+				ip_hdr_len,
+				tunnel_hdr_len,
+				inner_ip_hdr_len,
+				tcp_hdr_len,
+				seg_payload_len,
+				i,
+				payload_off,
+				i == n_segs - 1,
+				outer_l4_partial
+			);
+		else
+			sw_gso_update_segment(
+				seg,
+				l2_len,
+				ip_hdr_len,
+				tcp_hdr_len,
+				seg_payload_len,
+				i,
+				payload_off,
+				i == n_segs - 1
+			);
 
 		segs[i] = seg;
 	}
 
 	seg_payload_len = RTE_MIN(tso_segsz, payload_len);
 	rte_pktmbuf_trim(m, payload_len - seg_payload_len);
-	sw_gso_update_segment(
-		m, l2_len, ip_hdr_len, tcp_hdr_len, seg_payload_len, 0, 0, n_segs == 1
-	);
+	if (tunnel)
+		sw_gso_update_vxlan_segment(
+			m,
+			l2_len,
+			ip_hdr_len,
+			tunnel_hdr_len,
+			inner_ip_hdr_len,
+			tcp_hdr_len,
+			seg_payload_len,
+			0,
+			0,
+			n_segs == 1,
+			outer_l4_partial
+		);
+	else
+		sw_gso_update_segment(
+			m, l2_len, ip_hdr_len, tcp_hdr_len, seg_payload_len, 0, 0, n_segs == 1
+		);
 
 	segs[0] = m;
 	return n_segs;
@@ -200,15 +288,6 @@ uint16_t sw_gso_tunnel_process(
 	uint16_t nb_objs
 ) {
 	return sw_gso_do(graph, node, objs, nb_objs, false);
-}
-
-uint16_t sw_gso_vxlan_process(
-	struct rte_graph *graph,
-	struct rte_node *node,
-	void **objs,
-	uint16_t nb_objs
-) {
-	return sw_gso_do(graph, node, objs, nb_objs, true);
 }
 
 static struct rte_node_register sw_gso_node = {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2025 Robin Jarry
 
+#include "cksum.h"
 #include "graph.h"
 #include "mbuf.h"
 #include "port.h"
@@ -21,11 +22,18 @@ port_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 	needs_sw_gso = false;
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		struct rte_mbuf *m = objs[i];
+		uint64_t tx_offloads;
 
 		if (!m->tso_segsz)
 			continue;
 		port = iface_info_port(mbuf_data(m)->iface);
-		if (!(port->tx_offloads & RTE_ETH_TX_OFFLOAD_TCP_TSO)) {
+		tx_offloads = port->tx_offloads;
+		if (!(tx_offloads & RTE_ETH_TX_OFFLOAD_TCP_TSO)) {
+			needs_sw_gso = true;
+			break;
+		}
+		if (gr_cksum_inner_l4_partial(m)
+		    && !(tx_offloads & RTE_ETH_TX_OFFLOAD_VXLAN_TNL_TSO)) {
 			needs_sw_gso = true;
 			break;
 		}

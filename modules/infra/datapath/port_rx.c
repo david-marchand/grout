@@ -218,6 +218,7 @@ uint16_t rx_virtio_process(struct rte_graph *graph, struct rte_node *node, void 
 
 	for (unsigned r = 0; r < rx; r++) {
 		m = mbufs[r];
+		gr_cksum_init(m);
 		d = iface_mbuf_data(m);
 		d->iface = ctx->iface;
 
@@ -259,6 +260,7 @@ uint16_t rx_offload_process(struct rte_graph *graph, struct rte_node *node, void
 
 	for (unsigned r = 0; r < rx; r++) {
 		m = mbufs[r];
+		gr_cksum_init(m);
 		d = iface_mbuf_data(m);
 		d->iface = ctx->iface;
 
@@ -296,6 +298,7 @@ uint16_t rx_process(struct rte_graph *graph, struct rte_node *node, void **, uin
 
 	for (unsigned r = 0; r < rx; r++) {
 		m = mbufs[r];
+		gr_cksum_init(m);
 		d = iface_mbuf_data(m);
 		d->iface = ctx->iface;
 
@@ -335,6 +338,7 @@ uint16_t rx_soft_rss_process(struct rte_graph *graph, struct rte_node *node, voi
 
 	for (unsigned r = 0; r < rx; r++) {
 		m = mbufs[r];
+		gr_cksum_init(m);
 		d = iface_mbuf_data(m);
 		d->iface = ctx->iface;
 
@@ -383,6 +387,7 @@ uint16_t rx_bond_virtio_process(struct rte_graph *graph, struct rte_node *node, 
 
 	for (unsigned r = 0; r < rx; r++) {
 		m = mbufs[r];
+		gr_cksum_init(m);
 		d = iface_mbuf_data(m);
 
 		if (m->ol_flags & RTE_MBUF_F_RX_VLAN_STRIPPED) {
@@ -439,6 +444,7 @@ rx_bond_offload_process(struct rte_graph *graph, struct rte_node *node, void **,
 
 	for (unsigned r = 0; r < rx; r++) {
 		m = mbufs[r];
+		gr_cksum_init(m);
 		d = iface_mbuf_data(m);
 
 		if (m->ol_flags & RTE_MBUF_F_RX_VLAN_STRIPPED) {
@@ -486,6 +492,7 @@ uint16_t rx_bond_process(struct rte_graph *graph, struct rte_node *node, void **
 
 	for (unsigned r = 0; r < rx; r++) {
 		m = mbufs[r];
+		gr_cksum_init(m);
 		d = iface_mbuf_data(m);
 		eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 
@@ -536,6 +543,7 @@ rx_bond_soft_rss_process(struct rte_graph *graph, struct rte_node *node, void **
 
 	for (unsigned r = 0; r < rx; r++) {
 		m = mbufs[r];
+		gr_cksum_init(m);
 		d = iface_mbuf_data(m);
 
 		if (m->ol_flags & RTE_MBUF_F_RX_VLAN_STRIPPED) {
